@@ -1,0 +1,113 @@
+---
+title: "Swift Parrot Data Cleaning"
+subtitle: "Atlas of Living Australia — Occurrence Records"
+author: "Farzan Momayezi"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## Overview
+
+This script cleans the raw Swift Parrot (*Lathamus discolor*) occurrence records
+downloaded from the [Atlas of Living Australia](https://www.ala.org.au/).
+Irregularities were first detected visually in Tableau (spatial outliers,
+inconsistent date formats and extreme coordinate uncertainty) and are corrected
+here programmatically so the pipeline is fully reproducible.
+
+Paths are **relative to the project root**, so the script runs on any machine
+without editing. Open `R/Data_wrangling.Rproj` in RStudio (or set the working
+directory to the repo root) before running.
+
+## Dependencies
+
+```{r libraries}
+library(dplyr)      # data manipulation
+library(lubridate)  # robust date parsing
+```
+
+## 1. Load the raw dataset
+
+```{r load}
+data <- read.csv(
+  file.path("..", "data", "raw", "ALA_S12026PE1.csv"),
+  stringsAsFactors = FALSE
+)
+
+cat("Raw records:", nrow(data), "\n")
+```
+
+## 2. Fix date formats and drop future / invalid dates
+
+The `observationDate` field mixes several formats (`d/m/Y`, `Y-m-d`, `m/d/Y`).
+`lubridate::parse_date_time()` standardises them; records that fail to parse or
+fall in the future are removed to keep the temporal analysis sound.
+
+```{r dates}
+data$observationDate <- parse_date_time(
+  data$observationDate,
+  orders = c("d/m/Y", "Y-m-d", "m/d/Y")
+)
+
+cleaned_data <- data %>%
+  filter(!is.na(observationDate) & observationDate <= Sys.Date())
+```
+
+## 3. Correct geographic outliers (points in the ocean)
+
+Some records had latitude and longitude recorded in the wrong fields, placing
+Swift Parrots in the Indian Ocean / Western Australia. The species is endemic to
+south-eastern Australia and Tasmania, so positive-latitude points are swapped
+back into the correct axes.
+
+```{r location}
+cleaned_data <- cleaned_data %>%
+  mutate(
+    temp_lat        = decimalLatitude,
+    decimalLatitude = ifelse(decimalLatitude > 0, decimalLongitude, decimalLatitude),
+    decimalLongitude = ifelse(temp_lat > 0, temp_lat, decimalLongitude)
+  ) %>%
+  select(-temp_lat)
+```
+
+## 4. Correct state labels for Tasmania
+
+Points that fall inside Tasmania's geographic bounds but were mislabelled
+(e.g. as New South Wales) are relabelled.
+
+```{r state}
+cleaned_data <- cleaned_data %>%
+  mutate(
+    stateProvince = ifelse(
+      decimalLatitude < -40 & decimalLongitude > 143,
+      "Tasmania",
+      stateProvince
+    )
+  )
+```
+
+## 5. Remove coordinate-uncertainty outliers
+
+Records with a positional uncertainty above 10 km are too vague for habitat
+mapping and are dropped.
+
+```{r uncertainty}
+cleaned_data <- cleaned_data %>%
+  filter(coordinateUncertaintyInMeters <= 10000)
+```
+
+## 6. Save the cleaned dataset
+
+```{r save}
+out_path <- file.path("..", "data", "processed", "Final_Cleaned_Swift_Parrot_Data.csv")
+write.csv(cleaned_data, out_path, row.names = FALSE)
+
+cat("Cleaned records:", nrow(cleaned_data), "\n")
+cat("Saved to:", out_path, "\n")
+```

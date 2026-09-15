@@ -1,0 +1,28 @@
+# ---- R ----
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj.bak
+*-cache/
+*_files/
+/*.html
+
+# ---- RStudio ----
+.Rproj.user
+
+# ---- Tableau ----
+*.twbr
+*.twbx.bak
+Book*.twb
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
+
+# ---- Misc ----
+*.log
+~$*
